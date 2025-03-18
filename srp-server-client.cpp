@@ -16,7 +16,6 @@ const std::string g_hex = "02";
 BIGNUM* N;
 BIGNUM* g;
 
-// Инициализация SRP параметров
 void init_srp_params() {
     N = BN_new();
     g = BN_new();
@@ -24,6 +23,17 @@ void init_srp_params() {
         std::cerr << "Ошибка инициализации N и g" << std::endl;
         exit(1);
     }
+
+    char* N_hex_str = BN_bn2hex(N);
+    char* g_hex_str = BN_bn2hex(g);
+    if (N_hex_str && g_hex_str) {
+        std::cout << "N: " << N_hex_str << std::endl;
+        std::cout << "g: " << g_hex_str << std::endl;
+    } else {
+        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+    }
+    OPENSSL_free(N_hex_str);
+    OPENSSL_free(g_hex_str);
 }
 
 // Функция хеширования SHA-256
@@ -36,6 +46,7 @@ void sha256(const unsigned char* data, size_t length, unsigned char* out) {
         exit(1);
     }
     EVP_MD_CTX_free(ctx);
+
 }
 
 // Функция вычисления BIGNUM-хеша
@@ -45,26 +56,47 @@ BIGNUM* hash_to_bn(const std::string& input) {
     return BN_bin2bn(hash, SHA256_SIZE, nullptr);
 }
 
-// Функция вычисления x = H(salt | H(username | ":" | password))
-BIGNUM* calculate_x(const std::string& username, const std::string& password, const unsigned char* salt, size_t salt_len) {
-    std::string inner = username + ":" + password;
-    BIGNUM* inner_hash_bn = hash_to_bn(inner);
+// Функция вычисления x = H(salt || password))
+BIGNUM* calculate_x(const std::string& username, const std::string& password, const std::string& salt, size_t salt_len) {
+    std::string x_to_take_hash = salt + password;
+    std::cout << "Take hash of: " << x_to_take_hash << std::endl;
+    BIGNUM* x = hash_to_bn(x_to_take_hash);
+    
 
-    std::string x_data(reinterpret_cast<const char*>(salt), salt_len);
-    x_data.append(BN_bn2hex(inner_hash_bn));
+    char* x_hex_str = BN_bn2hex(x);
+    if (x_hex_str) {
+        std::cout << "x: " << x_hex_str << std::endl;
+    } else {
+        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+    }
+    OPENSSL_free(x_hex_str);
 
-    BN_free(inner_hash_bn);
-    return hash_to_bn(x_data);
+
+
+    //BN_free(x);
+    return x;
 }
+
+
 
 // Функция вычисления верификатора v = g^x % N
 BIGNUM* calculate_v(BIGNUM* x, BN_CTX* ctx) {
+    BN_CTX *ctx_v = BN_CTX_new(); 
     BIGNUM* v = BN_new();
-    if (!v || BN_mod_exp(v, g, x, N, ctx) == 0) {
-        std::cerr << "Ошибка вычисления v" << std::endl;
-        BN_free(v);
-        return nullptr;
+
+
+
+    BN_mod_exp(v, g, x, N, ctx_v);
+
+    char* v_hex_str = BN_bn2hex(v);
+    if (v_hex_str) {
+        std::cout << "v: " << v_hex_str << std::endl;
+    } else {
+        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
     }
+    OPENSSL_free(v_hex_str);
+    
+
     return v;
 }
 
@@ -72,13 +104,17 @@ BIGNUM* calculate_v(BIGNUM* x, BN_CTX* ctx) {
 struct User {
     std::string username;
     std::string password;
-    unsigned char salt[SALT_SIZE];
+    std::string salt;
     BIGNUM* v;
 
     User(const std::string& user, const std::string& pass) : username(user), password(pass), v(nullptr) {
-        RAND_bytes(salt, SALT_SIZE);
+        std::string salt = "0123456789abcdef";
+
         BN_CTX* ctx = BN_CTX_new();
-        BIGNUM* x = calculate_x(username, password, salt, SALT_SIZE);
+        
+        BIGNUM* x = calculate_x(username, password, salt, salt.length());
+
+
         v = calculate_v(x, ctx);
         BN_free(x);
         BN_CTX_free(ctx);
@@ -98,16 +134,19 @@ public:
 
 
     SRPClient(const std::string& user) : username(user), a(BN_new()), A(BN_new()), S(nullptr) {
-        BN_rand(a, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
+        //BN_rand(a, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
+        BN_hex2bn(&a, "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF");
         BN_CTX* ctx = BN_CTX_new();
         BN_mod_exp(A, g, a, N, ctx);
         BN_CTX_free(ctx);
+        
     }
 
     BIGNUM* get_A() { return A; }
 
     void compute_S(BIGNUM* B, BIGNUM* x, BN_CTX* ctx) {
         //BIGNUM* u = hash_to_bn(BN_bn2hex(A) + BN_bn2hex(B));
+        
         std::string A_hex = BN_bn2hex(A);
         std::string B_hex = BN_bn2hex(B);
         BIGNUM* u = hash_to_bn((A_hex + B_hex).c_str());
@@ -144,6 +183,7 @@ User* user;
 BIGNUM* b;
 BIGNUM* B;
 BIGNUM* S;
+std::string I = "alice";
 unsigned char K[SHA256_SIZE];
     SRPServer(User* u) : user(u), b(BN_new()), B(BN_new()), S(nullptr) {
         BN_CTX* ctx = BN_CTX_new();
@@ -152,7 +192,8 @@ unsigned char K[SHA256_SIZE];
         std::string g_hex = BN_bn2hex(g);
         BIGNUM* k = hash_to_bn((N_hex + g_hex).c_str());
 
-        BN_rand(b, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
+        //BN_rand(b, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
+        BN_hex2bn(&b, "FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321");
         BIGNUM* gb = BN_new();
         BN_mod_exp(gb, g, b, N, ctx);
         BN_mod_exp(B, k, user->v, N, ctx);
@@ -198,19 +239,39 @@ int main() {
     init_srp_params();
 
     // 2️⃣ Создаем пользователя с логином и паролем
-    std::string username = "Alice";
+    std::string username = "alice";
     std::string password = "securepassword";
     User user(username, password);
 
+
+
     // 3️⃣ Сервер создает `B`
     SRPServer server(&user);
+    
 
     // 4️⃣ Клиент создает `A`
     SRPClient client(username);
+    
 
     // 5️⃣ Сервер передает `B`, клиент передает `A`
     BIGNUM* A = client.get_A();
     BIGNUM* B = server.get_B();
+
+    char* A_hex_str = BN_bn2hex(A);
+    if (A_hex_str) {
+        std::cout << "A: " << A_hex_str << std::endl;
+    } else {
+        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+    }
+    OPENSSL_free(A_hex_str);
+
+    char* B_hex_str = BN_bn2hex(B);
+    if (B_hex_str) {
+        std::cout << "B: " << B_hex_str << std::endl;
+    } else {
+        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+    }
+    OPENSSL_free(B_hex_str);
     
 
     // 6️⃣ Вычисляем `x` (только на клиенте)
@@ -229,9 +290,9 @@ int main() {
     memcpy(server_K, server.K, SHA256_SIZE);
 
     if (memcmp(client_K, server_K, SHA256_SIZE) == 0) {
-        std::cout << "✅ Аутентификация успешна: ключи совпадают!" << std::endl;
+        std::cout << "Аутентификация успешна: ключи совпадают!" << std::endl;
     } else {
-        std::cerr << "❌ Ошибка: ключи не совпадают!" << std::endl;
+        std::cerr << "Ошибка: ключи не совпадают!" << std::endl;
     }
 
     //  🔄 Освобождаем память
@@ -240,4 +301,3 @@ int main() {
 
     return 0;
 }
-
