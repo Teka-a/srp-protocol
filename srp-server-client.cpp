@@ -32,6 +32,7 @@ void init_srp_params() {
     } else {
         std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
     }
+    std::cout << "\n";
     OPENSSL_free(N_hex_str);
     OPENSSL_free(g_hex_str);
 }
@@ -84,8 +85,6 @@ BIGNUM* calculate_v(BIGNUM* x, BN_CTX* ctx) {
     BN_CTX *ctx_v = BN_CTX_new(); 
     BIGNUM* v = BN_new();
 
-
-
     BN_mod_exp(v, g, x, N, ctx_v);
 
     char* v_hex_str = BN_bn2hex(v);
@@ -94,6 +93,8 @@ BIGNUM* calculate_v(BIGNUM* x, BN_CTX* ctx) {
     } else {
         std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
     }
+
+    std::cout << "\n";
     OPENSSL_free(v_hex_str);
     
 
@@ -134,10 +135,29 @@ public:
 
 
     SRPClient(const std::string& user) : username(user), a(BN_new()), A(BN_new()), S(nullptr) {
-        //BN_rand(a, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
-        BN_hex2bn(&a, "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF");
+        BN_rand(a, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
+
+        char* a_hex_str = BN_bn2hex(a);
+        if (a_hex_str) {
+            std::cout << "a: " << a_hex_str << std::endl;
+        } else {
+            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+        }
+
+        //BN_hex2bn(&a, "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF");
         BN_CTX* ctx = BN_CTX_new();
         BN_mod_exp(A, g, a, N, ctx);
+        char* A_hex_str = BN_bn2hex(A);
+        if (A_hex_str) {
+            std::cout << "A: " << A_hex_str << std::endl;
+        } else {
+            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+        }
+        OPENSSL_free(a_hex_str);
+        OPENSSL_free(A_hex_str);
+
+        std::cout << "\n";
+
         BN_CTX_free(ctx);
         
     }
@@ -192,13 +212,30 @@ unsigned char K[SHA256_SIZE];
         std::string g_hex = BN_bn2hex(g);
         BIGNUM* k = hash_to_bn((N_hex + g_hex).c_str());
 
-        //BN_rand(b, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
-        BN_hex2bn(&b, "FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321");
+        BN_rand(b, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
+        char* b_hex_str = BN_bn2hex(b);
+        if (b_hex_str) {
+            std::cout << "b: " << b_hex_str << std::endl;
+        } else {
+            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+        }
+        //BN_hex2bn(&b, "FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321");
         BIGNUM* gb = BN_new();
         BN_mod_exp(gb, g, b, N, ctx);
         BN_mod_exp(B, k, user->v, N, ctx);
         BN_add(B, B, gb);
         BN_mod(B, B, N, ctx);
+
+        char* B_hex_str = BN_bn2hex(B);
+        if (B_hex_str) {
+            std::cout << "B: " << B_hex_str << std::endl;
+        } else {
+            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+        }
+        OPENSSL_free(B_hex_str);
+        OPENSSL_free(b_hex_str);
+
+        std::cout << "\n";
 
         BN_free(k);
         BN_free(gb);
@@ -248,6 +285,7 @@ int main() {
     // 3️⃣ Сервер создает `B`
     SRPServer server(&user);
     
+    
 
     // 4️⃣ Клиент создает `A`
     SRPClient client(username);
@@ -257,13 +295,7 @@ int main() {
     BIGNUM* A = client.get_A();
     BIGNUM* B = server.get_B();
 
-    char* A_hex_str = BN_bn2hex(A);
-    if (A_hex_str) {
-        std::cout << "A: " << A_hex_str << std::endl;
-    } else {
-        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-    }
-    OPENSSL_free(A_hex_str);
+    
 
     char* B_hex_str = BN_bn2hex(B);
     if (B_hex_str) {
