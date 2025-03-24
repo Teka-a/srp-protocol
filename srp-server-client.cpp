@@ -16,6 +16,19 @@ const std::string g_hex = "02";
 BIGNUM* N;
 BIGNUM* g;
 
+
+void print_bn(std::string name, BIGNUM* bn)
+{
+    char* bn_hex_str = BN_bn2hex(bn);
+    if (bn_hex_str) {
+        std::cout << name << ": " << bn_hex_str << std::endl;
+    } else {
+        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
+    }
+
+    OPENSSL_free(bn_hex_str);
+}
+
 void init_srp_params() {
     N = BN_new();
     g = BN_new();
@@ -24,17 +37,9 @@ void init_srp_params() {
         exit(1);
     }
 
-    char* N_hex_str = BN_bn2hex(N);
-    char* g_hex_str = BN_bn2hex(g);
-    if (N_hex_str && g_hex_str) {
-        std::cout << "N: " << N_hex_str << std::endl;
-        std::cout << "g: " << g_hex_str << std::endl;
-    } else {
-        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-    }
+    print_bn("N", N);
+    print_bn("g", g);
     std::cout << "\n";
-    OPENSSL_free(N_hex_str);
-    OPENSSL_free(g_hex_str);
 }
 
 // Функция хеширования SHA-256
@@ -64,17 +69,8 @@ BIGNUM* calculate_x(const std::string& username, const std::string& password, co
     BIGNUM* x = hash_to_bn(x_to_take_hash);
     
 
-    char* x_hex_str = BN_bn2hex(x);
-    if (x_hex_str) {
-        std::cout << "x: " << x_hex_str << std::endl;
-    } else {
-        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-    }
-    OPENSSL_free(x_hex_str);
+    print_bn("x", x);
 
-
-
-    //BN_free(x);
     return x;
 }
 
@@ -87,17 +83,10 @@ BIGNUM* calculate_v(BIGNUM* x, BN_CTX* ctx) {
 
     BN_mod_exp(v, g, x, N, ctx_v);
 
-    char* v_hex_str = BN_bn2hex(v);
-    if (v_hex_str) {
-        std::cout << "v: " << v_hex_str << std::endl;
-    } else {
-        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-    }
+    print_bn("v", v);
 
     std::cout << "\n";
-    OPENSSL_free(v_hex_str);
     
-
     return v;
 }
 
@@ -109,7 +98,7 @@ struct User {
     BIGNUM* v;
 
     User(const std::string& user, const std::string& pass) : username(user), password(pass), v(nullptr) {
-        std::string salt = "0123456789abcdef";
+        salt = "0123456789abcdef";
 
         BN_CTX* ctx = BN_CTX_new();
         
@@ -117,11 +106,12 @@ struct User {
 
 
         v = calculate_v(x, ctx);
-        BN_free(x);
+        //BN_free(x);
         BN_CTX_free(ctx);
     }
 
-    ~User() { BN_free(v); }
+    ~User() { //BN_free(v); 
+        }
 };
 
 // Клиент SRP
@@ -131,68 +121,84 @@ public:
     BIGNUM* a;
     BIGNUM* A;
     BIGNUM* S;
-    unsigned char K[SHA256_SIZE];
+    char K[SHA256_SIZE];
 
 
     SRPClient(const std::string& user) : username(user), a(BN_new()), A(BN_new()), S(nullptr) {
         BN_rand(a, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
 
-        char* a_hex_str = BN_bn2hex(a);
-        if (a_hex_str) {
-            std::cout << "a: " << a_hex_str << std::endl;
-        } else {
-            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-        }
+        print_bn("a", a);
 
         //BN_hex2bn(&a, "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF");
         BN_CTX* ctx = BN_CTX_new();
         BN_mod_exp(A, g, a, N, ctx);
-        char* A_hex_str = BN_bn2hex(A);
-        if (A_hex_str) {
-            std::cout << "A: " << A_hex_str << std::endl;
-        } else {
-            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-        }
-        OPENSSL_free(a_hex_str);
-        OPENSSL_free(A_hex_str);
+        print_bn("A", A);
 
         std::cout << "\n";
 
-        BN_CTX_free(ctx);
+        //BN_CTX_free(ctx);
         
     }
 
     BIGNUM* get_A() { return A; }
 
-    void compute_S(BIGNUM* B, BIGNUM* x, BN_CTX* ctx) {
-        //BIGNUM* u = hash_to_bn(BN_bn2hex(A) + BN_bn2hex(B));
-        
+    void compute_S(BIGNUM* B, BIGNUM* x) {        
+
+        BN_CTX* ctx = BN_CTX_new();
+
         std::string A_hex = BN_bn2hex(A);
         std::string B_hex = BN_bn2hex(B);
+        std::cout << "u of: " << (A_hex + B_hex).c_str() << std::endl;
         BIGNUM* u = hash_to_bn((A_hex + B_hex).c_str());
+        print_bn("u", u);
 
         BIGNUM* ux = BN_new();
-        BIGNUM* a_plus_ux = BN_new();
-        S = BN_new();
-
         BN_mul(ux, u, x, ctx);
+        print_bn("ux", ux);
+
+
+        BIGNUM* a_plus_ux = BN_new();
         BN_add(a_plus_ux, a, ux);
-        BN_mod_exp(S, B, a_plus_ux, N, ctx);
+        print_bn("a_plus_ux", a_plus_ux);
 
-        int s_len = BN_num_bytes(S);
-        std::string s_data(s_len, 0);
-        BN_bn2bin(S, reinterpret_cast<unsigned char*>(&s_data[0]));
-        sha256(reinterpret_cast<const unsigned char*>(s_data.data()), s_data.size(), K);
+        std::string N_hex = BN_bn2hex(N);
+        std::string g_hex = BN_bn2hex(g);
+        std::cout << "Hash of: " << (N_hex + g_hex).c_str() << std::endl;
+        BIGNUM* k = hash_to_bn((N_hex + g_hex).c_str());
+        print_bn("k", k);
 
-        BN_free(u);
-        BN_free(ux);
-        BN_free(a_plus_ux);
+        BIGNUM* gx = BN_new();
+        BN_mod_exp(gx, g, x, N, ctx);
+        print_bn("gx", gx);
+
+        BIGNUM* kgx = BN_new();
+        BN_mul(kgx, k, gx, ctx);
+        print_bn("kgx", kgx);
+
+        BIGNUM* B_minux_kgx = BN_new();
+        BN_sub(B_minux_kgx, B, kgx);
+        print_bn("B_minus_kgx", B_minux_kgx);
+
+        S = BN_new();
+        BN_mod_exp(S, B_minux_kgx, a_plus_ux, N, ctx);
+        print_bn("S", S);
+
+        std::string S_hex = BN_bn2hex(S);
+        BIGNUM* key = hash_to_bn(S_hex);
+        std::string key_hex = BN_bn2hex(key);
+
+        std::cout << "Key: " << key_hex << std::endl;
+
+        strcpy(static_cast <char*>(K), key_hex.c_str());
+
+        std::cout << "\n";
+
     }
 
     ~SRPClient() {
-        BN_free(a);
-        BN_free(A);
-        BN_free(S);
+       // BN_free(a);
+        //BN_free(A);
+        //BN_free(S);
     }
 };
 
@@ -204,69 +210,88 @@ BIGNUM* b;
 BIGNUM* B;
 BIGNUM* S;
 std::string I = "alice";
-unsigned char K[SHA256_SIZE];
+char K[SHA256_SIZE];
     SRPServer(User* u) : user(u), b(BN_new()), B(BN_new()), S(nullptr) {
         BN_CTX* ctx = BN_CTX_new();
-        //BIGNUM* k = hash_to_bn(BN_bn2hex(N) + BN_bn2hex(g));
+        
         std::string N_hex = BN_bn2hex(N);
         std::string g_hex = BN_bn2hex(g);
+        std::cout << "Hash of: " << (N_hex + g_hex).c_str() << std::endl;
         BIGNUM* k = hash_to_bn((N_hex + g_hex).c_str());
+        print_bn("k", k);
+        print_bn("v", user->v);
+
+        BIGNUM* kv = BN_new();
+        BN_mul(kv, k, user->v, ctx);
+        print_bn("kv", kv);
 
         BN_rand(b, 256, BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY);
-        char* b_hex_str = BN_bn2hex(b);
-        if (b_hex_str) {
-            std::cout << "b: " << b_hex_str << std::endl;
-        } else {
-            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-        }
-        //BN_hex2bn(&b, "FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321");
+        print_bn("b", b);
         BIGNUM* gb = BN_new();
         BN_mod_exp(gb, g, b, N, ctx);
-        BN_mod_exp(B, k, user->v, N, ctx);
-        BN_add(B, B, gb);
-        BN_mod(B, B, N, ctx);
+        print_bn("gb", gb);
+        
+        BN_add(B, kv, gb);
 
-        char* B_hex_str = BN_bn2hex(B);
-        if (B_hex_str) {
-            std::cout << "B: " << B_hex_str << std::endl;
-        } else {
-            std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-        }
-        OPENSSL_free(B_hex_str);
-        OPENSSL_free(b_hex_str);
+        print_bn("B", B);
 
         std::cout << "\n";
 
-        BN_free(k);
-        BN_free(gb);
-        BN_CTX_free(ctx);
     }
 
     BIGNUM* get_B() { return B; }
 
-    void compute_S(BIGNUM* A, BN_CTX* ctx) {
+    void compute_S(BIGNUM* A, BIGNUM* B, BIGNUM* v, BIGNUM* b) {
+        print_bn("b", b);
+        std::cout << "Here\n";
+
+        BN_CTX* ctx = BN_CTX_new();
+
+        std::cout << "Here2\n";        
+
+        print_bn("A in", A);
+        print_bn("B in", B);
+
         std::string A_hex = BN_bn2hex(A);
+        std::cout << "A hex " << A_hex << std::endl;
         std::string B_hex = BN_bn2hex(B);
+        std::cout << "B hex: " << B_hex << std::endl;
+        std::cout << "u of: " << (A_hex + B_hex).c_str() << std::endl;
         BIGNUM* u = hash_to_bn((A_hex + B_hex).c_str());
-        //BIGNUM* u = hash_to_bn(BN_bn2hex(A) + BN_bn2hex(B));
+        print_bn("u", u);
+
         S = BN_new();
         BIGNUM* vu = BN_new();
-        BN_mod_exp(vu, user->v, u, N, ctx);
-        BN_mod_exp(S, A, b, N, ctx);
+        BN_mod_exp(vu, v, u, N, ctx);
+        print_bn("vu", vu);
 
-        int s_len = BN_num_bytes(S);
-        std::string s_data(s_len, 0);
-        BN_bn2bin(S, reinterpret_cast<unsigned char*>(&s_data[0]));
-        sha256(reinterpret_cast<const unsigned char*>(s_data.data()), s_data.size(), K);
+        BIGNUM* Avu = BN_new();
+        BN_mul(Avu, A, vu, ctx);
+        print_bn("Avu", Avu);
 
-        BN_free(vu);
-        BN_free(u);
+        print_bn("b", b);
+
+        BN_mod_exp(S, Avu, b, N, ctx);
+        print_bn("S", S);
+
+        std::string S_hex = BN_bn2hex(S);
+        BIGNUM* key = hash_to_bn(S_hex);
+        std::string key_hex = BN_bn2hex(key);
+
+        std::cout << "Key: " << key_hex << std::endl;
+
+        strcpy(static_cast <char*>(K), key_hex.c_str());
+
+        std::cout << "\n";
+
+        //BN_free(vu);
+        //BN_free(u);
+        //BN_free(key);
+        //BN_CTX_free(ctx);
     }
 
     ~SRPServer() {
-        BN_free(b);
-        BN_free(B);
-        BN_free(S);
+        //free
     }
 };
 
@@ -284,6 +309,8 @@ int main() {
 
     // 3️⃣ Сервер создает `B`
     SRPServer server(&user);
+    BIGNUM* b = server.b;
+    print_bn("b", b);
     
     
 
@@ -295,29 +322,22 @@ int main() {
     BIGNUM* A = client.get_A();
     BIGNUM* B = server.get_B();
 
-    
+    print_bn("B before", B);
 
-    char* B_hex_str = BN_bn2hex(B);
-    if (B_hex_str) {
-        std::cout << "B: " << B_hex_str << std::endl;
-    } else {
-        std::cerr << "Ошибка преобразования BIGNUM в hex" << std::endl;
-    }
-    OPENSSL_free(B_hex_str);
     
 
     // 6️⃣ Вычисляем `x` (только на клиенте)
     BIGNUM* x = calculate_x(username, password, user.salt, SALT_SIZE);
+    print_bn("x", x);
 
     // 7️⃣ Клиент вычисляет `S`
-    BN_CTX* ctx = BN_CTX_new();
-    client.compute_S(B, x, ctx);
+    client.compute_S(B, x);
 
     // 8️⃣ Сервер вычисляет `S`
-    server.compute_S(A, ctx);
+    server.compute_S(A, B, user.v, b);
 
     // 9️⃣ Проверяем совпадение хешей ключа K
-    unsigned char client_K[SHA256_SIZE], server_K[SHA256_SIZE];
+    char client_K[SHA256_SIZE], server_K[SHA256_SIZE];
     memcpy(client_K, client.K, SHA256_SIZE);
     memcpy(server_K, server.K, SHA256_SIZE);
 
@@ -328,8 +348,7 @@ int main() {
     }
 
     //  🔄 Освобождаем память
-    BN_free(x);
-    BN_CTX_free(ctx);
+    //BN_free(x);
 
     return 0;
 }
